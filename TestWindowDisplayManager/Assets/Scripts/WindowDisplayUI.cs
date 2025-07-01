@@ -1,211 +1,101 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.UI;
-using Forms = System.Windows.Forms;
-using Microsoft.Win32;
 
 public class WindowDisplayUI : MonoBehaviour
 {
     [Header("主螢幕 UI 元件")]
     public Button cloneButton;
     public Button extendButton;
-    public Button moveButton;
-    public Button activateDisplayAtIndexButton;
+    public Button displayMoveButton;  // 單一按鈕
     public Dropdown screenDropdown;
     public Text infoText;
-
-    private int targetScreenIndex = 0;
-    private Coroutine activateDisplay2Routine;
 
     void Start()
     {
         cloneButton.onClick.AddListener(SwitchToClone);
         extendButton.onClick.AddListener(SwitchToExtend);
-        moveButton.onClick.AddListener(MoveToTargetScreen);
-        activateDisplayAtIndexButton.onClick.AddListener(ActivateDisplayAtIndex);
-        screenDropdown.onValueChanged.AddListener(OnDropdownChanged);
-        SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
+        displayMoveButton.onClick.AddListener(MoveDisplay0To1AndDisplay1To2);
 
-        UpdateScreenList();
-        UpdateInfo();
+        UpdateScreenDropdown();
+        UpdateInfo($"目前偵測到 {Display.displays.Length} 個螢幕");
 
-        StartCoroutine(ActivateExtendAfterDelay());
+        // 啟動所有螢幕
+        for (int i = 1; i < Display.displays.Length; i++)
+        {
+            Display.displays[i].Activate();
+        }
+
+        // 預設 Canvas 分配
+        ApplyDefaultCanvasToDisplays();
     }
 
-    void OnDestroy()
+    void ApplyDefaultCanvasToDisplays()
     {
-        SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
-    }
-
-    void OnDropdownChanged(int index)
-    {
-        targetScreenIndex = index;
-        UpdateInfo();
-    }
-
-    void OnDisplayChanged(object sender, EventArgs e)
-    {
-        UnityEngine.Debug.Log("螢幕設定變更偵測到");
-        UpdateScreenList();
-        UpdateInfo();
+        MoveDisplay0To1AndDisplay1To2();
+        UpdateInfo("已將 Canvas 預設分配到對應螢幕 (Display0→螢幕1, Display1→螢幕2)");
     }
 
     public void SwitchToClone()
     {
         Process.Start("cmd.exe", "/C DisplaySwitch.exe /clone");
-        UpdateInfoText("切換到鏡像模式");
-        UpdateScreenList();
+        UpdateInfo("切換為鏡像模式 (Clone)");
     }
 
     public void SwitchToExtend()
     {
         Process.Start("cmd.exe", "/C DisplaySwitch.exe /extend");
-        UpdateInfoText("切換至延伸模式中...");
-
-        if (activateDisplay2Routine != null)
-            StopCoroutine(activateDisplay2Routine);
-
-        activateDisplay2Routine = StartCoroutine(ActivateDisplay2AfterExtendedDisplayReady());
-        UpdateScreenList();
+        UpdateInfo("切換為擴展模式 (Extend)");
     }
 
-    IEnumerator ActivateDisplay2AfterExtendedDisplayReady()
+    /// <summary>
+    /// Display0 → 螢幕1 (index 0)
+    /// Display1 → 螢幕2 (index 1)
+    /// </summary>
+    void MoveDisplay0To1AndDisplay1To2()
     {
-        yield return new WaitForSeconds(3f);
-        AutoAssignDisplayToRightmostScreen();
-    }
+        Canvas[] canvases = FindObjectsOfType<Canvas>();
 
-    IEnumerator ActivateExtendAfterDelay()
-    {
-        yield return new WaitForSeconds(0.05f);
-        SwitchToExtend();
-    }
+        int count0 = 0;//執行一次
+        int count1 = 0;
 
-    void AutoAssignDisplayToRightmostScreen()
-    {
-        var screens = Forms.Screen.AllScreens;
-        int rightmostIndex = 0;
-        int maxX = int.MinValue;
-
-        for (int i = 0; i < screens.Length; i++)
+        foreach (var canvas in canvases)
         {
-            if (screens[i].Bounds.X > maxX)//偵測最右側螢幕範圍
+            if (canvas.targetDisplay == 0)
             {
-                maxX = screens[i].Bounds.X;
-                rightmostIndex = i;
+                canvas.targetDisplay = 0; // 螢幕1
+                count0++;
+            }
+            else if (canvas.targetDisplay == 1)
+            {
+                canvas.targetDisplay = 1; // 螢幕2
+                count1++;
             }
         }
 
-        if (rightmostIndex < Display.displays.Length)
-        {
-            //Display.displays[rightmostIndex].Deactivate(); 根本沒這東西ai掰的
-
-            Display.displays[rightmostIndex].Activate();//啟動最右側螢幕
-            UnityEngine.Debug.Log($"已啟用最右邊螢幕：Display {rightmostIndex}");
-            UpdateInfoText($"已啟用最右邊螢幕：Display {rightmostIndex}");
-        }
-        else
-        {
-            UnityEngine.Debug.LogWarning("Unity 的 Display index 不包含最右側螢幕");
-        }
+        UpdateInfo($"Display0 Canvas 移動到螢幕1：{count0} 個\nDisplay1 Canvas 移動到螢幕2：{count1} 個");
     }
 
-    public void MoveToTargetScreen()
-    {
-        var screens = Forms.Screen.AllScreens;
-
-        if (targetScreenIndex >= screens.Length)
-        {
-            UnityEngine.Debug.LogWarning($"螢幕 {targetScreenIndex} 不存在");
-            return;
-        }
-
-        var screen = screens[targetScreenIndex];
-
-        IntPtr hwnd = GetActiveWindow();
-        MoveWindow(hwnd, screen.Bounds.X, screen.Bounds.Y, screen.Bounds.Width, screen.Bounds.Height, true);
-
-        UnityEngine.Debug.Log($"視窗已移動到螢幕 {targetScreenIndex}");
-        UpdateInfoText($"視窗已移動到螢幕 {targetScreenIndex}");
-        UpdateScreenList();
-    }
-
-    public void ActivateDisplayAtIndex()
-    {
-        int index = targetScreenIndex;
-
-        if (index >= Display.displays.Length)
-        {
-            UnityEngine.Debug.LogWarning($"Display.displays 中沒有 index {index}");
-            return;
-        }
-
-        var screens = Forms.Screen.AllScreens;
-        if (index < screens.Length)
-        {
-            var bounds = screens[index].Bounds;
-            Display.displays[index].Activate(bounds.Width, bounds.Height, 60);
-            UpdateInfoText($"Display {index} 啟用並設為 {bounds.Width}x{bounds.Height}");
-        }
-        else
-        {
-            Display.displays[index].Activate();
-            UpdateInfoText($"Display {index} 啟用（使用預設解析度）");
-        }
-
-        UnityEngine.Debug.Log($"Display {index} 已啟用");
-        UpdateScreenList();
-    }
-
-    void UpdateScreenList()
+    void UpdateScreenDropdown()
     {
         screenDropdown.ClearOptions();
-        var screens = Forms.Screen.AllScreens;
-
-        List<string> options = new List<string>();
-        for (int i = 0; i < screens.Length; i++)
+        int displayCount = Display.displays.Length;
+        var options = new System.Collections.Generic.List<string>();
+        for (int i = 0; i < displayCount; i++)
         {
-            options.Add($"螢幕 {i} ({screens[i].Bounds.Width}x{screens[i].Bounds.Height})");
+            options.Add($"螢幕 {i + 1}");
         }
-
         screenDropdown.AddOptions(options);
-
-        if (targetScreenIndex >= screens.Length)
-            targetScreenIndex = 0;
-
-        screenDropdown.value = targetScreenIndex;
+        screenDropdown.value = 0;
+        screenDropdown.RefreshShownValue();
     }
 
-    void UpdateInfo()
+    void UpdateInfo(string message)
     {
-        var screens = Forms.Screen.AllScreens;
-        string info = $"螢幕數量: {screens.Length}\n";
-
-        for (int i = 0; i < screens.Length; i++)
+        if (infoText != null)
         {
-            info += $"螢幕 {i}: {screens[i].Bounds.Width}x{screens[i].Bounds.Height} @ {screens[i].Bounds.X},{screens[i].Bounds.Y}\n";
-        }
-
-        info += $"\n目前目標螢幕: {targetScreenIndex}";
-
-        if (infoText != null)
-            infoText.text = info;
-    }
-
-    void UpdateInfoText(string message)
-    {
-        if (infoText != null)
             infoText.text = message;
+            UnityEngine.Debug.Log(message);
+        }
     }
-
-    // Windows API
-    [DllImport("user32.dll")]
-    static extern IntPtr GetActiveWindow();
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
 }
