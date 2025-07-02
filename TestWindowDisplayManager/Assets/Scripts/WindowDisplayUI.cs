@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 
 public class WindowDisplayUI : MonoBehaviour
 {
@@ -17,7 +18,7 @@ public class WindowDisplayUI : MonoBehaviour
         extendButton.onClick.AddListener(SwitchToExtend);
         displayMoveButton.onClick.AddListener(MoveDisplay0To1AndDisplay1To2);
 
-        UpdateScreenDropdown();
+        UpdateScreenDropdown();//更新列表
         UpdateInfo($"目前偵測到 {Display.displays.Length} 個螢幕");
 
         // 啟動所有螢幕
@@ -26,7 +27,7 @@ public class WindowDisplayUI : MonoBehaviour
             Display.displays[i].Activate();
         }
 
-        // 預設 Canvas 分配
+        // 預設 Canvas 移動位置
         ApplyDefaultCanvasToDisplays();
     }
 
@@ -46,7 +47,33 @@ public class WindowDisplayUI : MonoBehaviour
     {
         Process.Start("cmd.exe", "/C DisplaySwitch.exe /extend");
         UpdateInfo("切換為擴展模式 (Extend)");
+        StartCoroutine(ReconnectDisplaysAfterDelay());
     }
+
+    IEnumerator ReconnectDisplaysAfterDelay()
+    {
+        // 等待 2 秒，讓系統完成螢幕切換
+        yield return new WaitForSeconds(6f);
+        
+        // 啟動所有螢幕
+        for (int i = 1; i < Display.displays.Length; i++)
+        {
+            Display.displays[i].Activate();
+        }
+        MoveDisplay0To1AndDisplay1To2();
+        /*
+
+        // 重新啟用 Unity 的所有顯示器
+        for (int i = 1; i < Display.displays.Length; i++)
+        {
+            Display.displays[i].Activate();
+            UnityEngine.Debug.Log($"Display {i} 已啟用");
+        }
+
+        UpdateInfo($"目前可用螢幕數：{Display.displays.Length}");
+        */
+    }
+    
 
     /// <summary>
     /// Display0 → 螢幕1 (index 0)
@@ -63,11 +90,13 @@ public class WindowDisplayUI : MonoBehaviour
         {
             if (canvas.targetDisplay == 0)
             {
+                Display.displays[0].Activate();
                 canvas.targetDisplay = 0; // 螢幕1
                 count0++;
             }
             else if (canvas.targetDisplay == 1)
             {
+                Display.displays[1].Activate();
                 canvas.targetDisplay = 1; // 螢幕2
                 count1++;
             }
